@@ -1,8 +1,8 @@
-# qiling-ai-sdk 0.2.0
+# qiling-ai-sdk 0.2.1
 
 器灵官方 Python SDK，支持授权码登录、分站品牌、套餐权益、设备绑定、额度扣减、AI 调用和微信 Native 续费。支持 Python 3.9+，仅使用标准库，无运行时第三方依赖。
 
-[在线开发文档](https://867fas1f7s.apifox.cn/) · [AI 文档索引](https://867fas1f7s.apifox.cn/llms.txt) · [配套接入 Skills](https://github.com/qilingAI/qiling-skills)
+[官网](https://toolsoul.daniu7.cn) · [在线开发文档](https://867fas1f7s.apifox.cn/) · [AI 文档索引](https://867fas1f7s.apifox.cn/llms.txt) · [配套接入 Skills](https://github.com/qilingAI/qiling-skills)
 
 这是从器灵平台已验证的 SDK 拆出的独立仓库，与平台版本 54fcc1f 的接口兼容。
 
@@ -11,7 +11,7 @@
 从官方仓库安装固定版本：
 
 ```sh
-python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.2.0"
+python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.2.1"
 ```
 
 或者克隆源码后安装：
@@ -26,13 +26,15 @@ python -m pip install .
 
 ## 上架前先调试
 
+SDK 不预设生产域名，初始化时必须显式传入 `base_url`。以下示例通过 `QILING_API_URL` 读取你已确认的 API 根地址，不附加 `/api/v1`；官网链接不代表 API 地址。
+
 保存软件及套餐后，在开发者后台“我的软件 → 开发调试”生成测试 App Key 和测试授权码。软件无需先上架。测试访问窗口为 7 天，支持重置和停用；调试权限不包含付款或真实 AI。
 
 ```python
 import os
 from qiling_ai_sdk import QilingAiClient
 
-client = QilingAiClient("https://ql.xiazq.com")
+client = QilingAiClient(os.environ["QILING_API_URL"])
 app_key = os.environ["QILING_TEST_APP_KEY"]
 license_key = os.environ["QILING_TEST_LICENSE_KEY"]
 bootstrap = client.bootstrap(app_key, test_license_key=license_key)
@@ -62,9 +64,10 @@ python examples/quickstart.py --consume --feature default
 ## 初始化与登录
 
 ```python
+import os
 from qiling_ai_sdk import QilingAiClient
 
-client = QilingAiClient(base_url="https://ql.xiazq.com")
+client = QilingAiClient(base_url=os.environ["QILING_API_URL"])
 bootstrap = client.bootstrap(app_key="qi-tui-desktop", site_code="platform")
 session = client.license_login(app_key="qi-tui-desktop", license_key="QLIC-xxxx")
 
@@ -85,9 +88,11 @@ SDK 默认只在内存保管凭证，不负责持久化。应用应将两项凭�
 安全存储返回的 `saved` 对象可按以下方式恢复。参数名使用 **snake_case** 的 `refresh_token`：
 
 ```python
+import os
+
 def restore_client(saved, device_provider=None):
     restored = QilingAiClient(
-        base_url="https://ql.xiazq.com",
+        base_url=os.environ["QILING_API_URL"],
         token=saved["token"],
         refresh_token=saved["refresh_token"],
         device_provider=device_provider,
