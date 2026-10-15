@@ -1,3 +1,5 @@
+from .authorization import QilingAuthorizationClient
+from .open_client import QilingOpenClient
 from .client import (
     DeviceDescriptor,
     QilingAiClient,
@@ -6,6 +8,8 @@ from .client import (
 )
 
 __all__ = [
+    "QilingAuthorizationClient",
+    "QilingOpenClient",
     "DeviceDescriptor",
     "QilingAiClient",
     "QilingAiError",

@@ -269,98 +269,45 @@ class QilingAiClient:
             license_info["quota_total"] = result.get("quota_total")
         return result
 
-    def _sync_quota(self, result: dict[str, Any]) -> None:
-        quota = result.get("quota") or {}
-        if self.license_session and quota.get("quota_total") is not None and quota.get("quota_used") is not None:
-            license_info = self.license_session.setdefault("license", {})
-            license_info["quota_total"] = quota["quota_total"]
-            license_info["quota_used"] = quota["quota_used"]
+    def _ai_app_key(self) -> str:
+        """当前授权 App Key，不接受客户端上游地址。"""
+        key = (self.license_session or {}).get("app", {}).get("app_key")
+        if not key:
+            raise RuntimeError("请先登录或校验软件授权")
+        return key
 
-    def ai_chat(
-        self,
-        messages: list[dict[str, str]],
-        feature_code: str = "ai_chat",
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
+    def ai_models(self) -> dict[str, Any]:
+        """查询平台已启用模型和用户报价；需有效软件授权及套餐 AI 开关。"""
+        query = urlencode({"app_key": self._ai_app_key()})
+        return self._request("GET", "/api/v1/sdk/ai/models?" + query)
+
+    def ai_estimate(self, kind: str, **request: Any) -> dict[str, Any]:
+        """预估最大费用，不产生供应商调用。"""
+        return self._request("POST", "/api/v1/sdk/ai/estimate", {
+            "kind": kind, "request": {**request, "app_key": self._ai_app_key()},
+        })
+
+    def ai_video(
+        self, prompt: str, *, request_id: str, model: str, duration: int = 5, resolution: str = "720p",
+        reference_images: list[str] | None = None, reference_video: str | None = None, reference_seconds: int = 0,
     ) -> dict[str, Any]:
-        """Call the platform AI gateway for text chat.
+        """提交一次视频任务；重试复用业务 request_id，随后查询返回的任务 id。"""
+        return self._request("POST", "/api/v1/sdk/ai/video", {
+            "app_key": self._ai_app_key(), "request_id": request_id, "model": model, "prompt": prompt,
+            "duration": duration, "resolution": resolution, "reference_images": reference_images or [],
+            "reference_video": reference_video, "reference_seconds": reference_seconds,
+        })
 
-        The gateway validates the license, device and remaining quota, then
-        proxies to the configured upstream. Quota is NOT deducted here; call
-        consume_quota() afterwards.
-        """
-        if not self.license_session:
-            raise RuntimeError("Please call license_login or license_check before using AI gateway.")
-        app_key = self.license_session.get("app", {}).get("app_key")
-        if not app_key:
-            raise RuntimeError("Current license session has no app_key.")
-        result = self._request(
-            "POST",
-            "/api/v1/sdk/ai/chat",
-            {
-                "app_key": app_key,
-                "feature_code": feature_code,
-                "messages": messages,
-                "model": model,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
-        )
-        self._sync_quota(result)
-        return result
+    def ai_task(self, task_id: int) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/sdk/ai/tasks/{int(task_id)}")
 
-    def ai_translate(
-        self,
-        text: str,
-        from_lang: str = "auto",
-        to: str = "en",
-        feature_code: str = "ai_translate",
-    ) -> dict[str, Any]:
-        """Call the platform AI gateway for translation (Youdao v3 upstream)."""
-        if not self.license_session:
-            raise RuntimeError("Please call license_login or license_check before using AI gateway.")
-        app_key = self.license_session.get("app", {}).get("app_key")
-        if not app_key:
-            raise RuntimeError("Current license session has no app_key.")
-        result = self._request(
-            "POST",
-            "/api/v1/sdk/ai/translate",
-            {
-                "app_key": app_key,
-                "feature_code": feature_code,
-                "text": text,
-                "from": from_lang,
-                "to": to,
-            },
-        )
-        self._sync_quota(result)
-        return result
+    def ai_cancel_video(self, task_id: int) -> dict[str, Any]:
+        """请求取消，以查询到的上游取消状态为准。"""
+        return self._request("POST", f"/api/v1/sdk/ai/tasks/{int(task_id)}/cancel", {})
 
-    def ai_image(
-        self,
-        prompt: str,
-        size: str | None = None,
-        feature_code: str = "ai_image",
-    ) -> dict[str, Any]:
-        """Call the platform AI gateway for image generation."""
-        if not self.license_session:
-            raise RuntimeError("Please call license_login or license_check before using AI gateway.")
-        app_key = self.license_session.get("app", {}).get("app_key")
-        if not app_key:
-            raise RuntimeError("Current license session has no app_key.")
-        result = self._request(
-            "POST",
-            "/api/v1/sdk/ai/image",
-            {
-                "app_key": app_key,
-                "feature_code": feature_code,
-                "prompt": prompt,
-                "size": size,
-            },
-        )
-        self._sync_quota(result)
-        return result
+    def ai_bills(self, page: int = 1, page_size: int = 20) -> dict[str, Any]:
+        query = urlencode({"page": page, "page_size": page_size})
+        return self._request("GET", "/api/v1/sdk/ai/bills?" + query)
 
     def _request(
         self,

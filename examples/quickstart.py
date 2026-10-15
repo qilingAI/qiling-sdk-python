@@ -11,7 +11,9 @@ def main():
     parser.add_argument('--consume', action='store_true', help="明确执行一次测试额度扣减。")
     parser.add_argument('--feature', default='default', help="要验证的功能权益标识。")
     args = parser.parse_args()
-    base_url = os.getenv('QILING_API_URL', 'http://127.0.0.1:8000').rstrip('/')
+    base_url = os.getenv('QILING_API_URL', '').rstrip('/')
+    if not base_url:
+        raise SystemExit('请设置已确认的 API 根地址 QILING_API_URL，不要把官网链接直接当作 API 地址。')
     app_key = os.getenv('QILING_TEST_APP_KEY', '')
     license_key = os.getenv('QILING_TEST_LICENSE_KEY', '')
     if not app_key or not license_key:
