@@ -44,6 +44,7 @@ class QilingOpenClient:
         return self._request("GET", "/tasks/" + quote(str(task_id), safe=""))
 
     def remove_ai(self, text: str) -> dict[str, Any]:
+        """Submit text verbatim, preserving real line breaks and paragraph spacing."""
         return self._request("POST", "/remove-ai", {"text": text})
 
     def chat(

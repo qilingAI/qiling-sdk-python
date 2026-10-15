@@ -100,6 +100,17 @@ class OpenApiTests(unittest.TestCase):
                 self.client.video("cat", model="video-model", request_id="business-1")
         self.assertEqual(request.call_count, 1)
 
+    def test_remove_ai_preserves_paragraphs_through_http_json(self):
+        for newline in ("\n", "\r\n", "\r"):
+            with self.subTest(newline=repr(newline)):
+                text = newline + "  第一段第一行" + newline + "第二行" + newline * 3 + "\t第二段，含字面量 \\n。" + newline * 2
+                for submit, field in ((lambda: self.client.remove_ai(text), "text"),
+                                      (lambda: self.client.submit_task("remove_ai", input=text), "input")):
+                    with patch.object(http, "urlopen", return_value=io.BytesIO(b'{"task_id":"paragraph-task"}')) as request:
+                        submit()
+                    payload = json.loads(request.call_args.args[0].data.decode("utf-8"))
+                    self.assertEqual(payload[field], text)
+
     def test_sdk_ai_uses_sdk_session_and_preserves_request_id(self):
         sdk = QilingAiClient("https://api.example.test", token="sdk-token")
         with patch.object(http, "urlopen") as request:

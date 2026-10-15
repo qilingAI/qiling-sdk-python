@@ -80,6 +80,8 @@ call_id = result["id"]  # 保存后用 model_call(call_id) 查询原调用。
 
 `usage`、`logs` 的参数，以及 `submit_task` 的 `options` 为关键字参数。通用工具的 task_id 和模型调用的 id 使用不同查询接口。
 
+去 AI 改文依赖原文段落结构。`remove_ai(text)` 和 `submit_task("remove_ai", input=text)` 会原样提交正文，保留真实换行与空行。调用前不要把段落用空格合并、清洗空白，或手动将换行替换成字面量反斜杠加 n；JSON 序列化由 SDK 完成。需要保留文件原始换行格式时可用 `Path(path).read_bytes().decode("utf-8-sig")` 读取正文。
+
 模型生成前冻结预计费用，完成后按实际用量和请求开始时的价格快照结算；不要再调用 `consume_quota` 为模型重复扣次。价格已经包含倍率，不再手动乘算。费用为十进制字符串，需计算时使用 `decimal.Decimal`；`billing.fee=null` 表示未完成或待核对，不能视为免费。
 
 `succeeded` 才表示生成完成。`queued/running/cancel_requested` 继续查询同一 id；`unknown/review` 等待核对，不重新生成。取消请求被接受不代表取消或退款已完成。网络结果不明时 SDK 不自动重发生成请求，保留业务请求号并查询原任务。HTTP 402 表示余额不足，401 需要处理 API Key，不能用 SDK refresh_token 刷新 API Key。
