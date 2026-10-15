@@ -60,7 +60,7 @@ class QilingOpenClient:
         return self._request("POST", "/remove-ai", {"text": text})
 
     def chat(
-        self, messages: list[dict[str, str]], *, model: str, request_id: str | None = None,
+        self, messages: list[dict[str, Any]], *, model: str, request_id: str | None = None,
         max_tokens: int | None = None, temperature: float | None = None,
         idempotency_key: str | None = None, **options: Any,
     ) -> dict[str, Any]:
@@ -88,14 +88,40 @@ class QilingOpenClient:
         return self._request("POST", "/images/generations", payload, model_api=True, idempotency_key=idempotency_key)
 
     def video(
-        self, prompt: str, *, model: str, request_id: str, duration: int = 5, resolution: str = "720p",
-        reference_images: list[str] | None = None, reference_video: str | None = None, reference_seconds: int = 0,
+        self, prompt: str | None = None, *, model: str, request_id: str | None = None,
+        content: list[dict[str, Any]] | None = None, duration: int = 5, resolution: str = "720p",
+        ratio: str = "16:9", generate_audio: bool | None = None, return_last_frame: bool = False,
+        reference_images: list[str] | None = None, reference_video: str | None = None,
+        reference_audios: list[str] | None = None, first_frame: str | None = None,
+        last_frame: str | None = None, reference_seconds: int = 0,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        return self._request("POST", "/videos", {
-            "request_id": request_id, "model": model, "prompt": prompt,
-            "duration": duration, "resolution": resolution, "reference_images": reference_images or [],
-            "reference_video": reference_video, "reference_seconds": reference_seconds,
-        }, model_api=True)
+        """Create a persistent video task; content and convenience inputs are alternatives."""
+        references = {"prompt": prompt, "reference_images": reference_images,
+                      "reference_video": reference_video, "reference_audios": reference_audios,
+                      "first_frame": first_frame, "last_frame": last_frame}
+        if content is not None and any(references.values()):
+            raise ValueError("content与prompt、参考素材便捷字段不能同时填写。")
+        payload = {"model": model, "duration": duration, "resolution": resolution,
+                   "ratio": ratio, "return_last_frame": return_last_frame,
+                   "reference_seconds": reference_seconds}
+        for name, value in {**references, "content": content, "generate_audio": generate_audio,
+                            "request_id": request_id}.items():
+            if value is not None:
+                payload[name] = value
+        return self._request("POST", "/videos", payload, model_api=True, idempotency_key=idempotency_key)
+
+    def openai(self):
+        """Optional official SDK bridge for SSE and multipart editing; caller closes it."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise RuntimeError("请安装可选的官方openai依赖；0.5.0的openai可选依赖需要Python3.10+。") from None
+        return OpenAI(
+            base_url=self._http.base_url + "/v1", api_key=self._api_key,
+            default_headers={"x-qiling-app-key": self.app_key} if self.app_key else {},
+            timeout=self._http.timeout, max_retries=0,
+        )
 
     def estimate(self, kind: str, request: dict[str, Any]) -> dict[str, Any]:
         """Estimate the maximum fee without submitting to a provider or freezing balance."""

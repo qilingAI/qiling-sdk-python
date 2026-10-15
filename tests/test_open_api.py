@@ -50,14 +50,12 @@ class OpenApiTests(unittest.TestCase):
         self.assertEqual(json.loads(calls[3].data)["reference_seconds"], 5)
         self.assertEqual(len(calls), 4)
 
-    def test_model_is_required_and_only_video_requires_request_id(self):
+    def test_model_is_required_for_all_generation_methods(self):
         with patch.object(http, "urlopen") as request:
             for method, value in [(self.client.chat, []), (self.client.image, "cat"), (self.client.video, "cat")]:
                 with self.subTest(method=method.__name__):
                     with self.assertRaises(TypeError):
                         method(value, request_id="business-1")
-            with self.assertRaises(TypeError):
-                self.client.video("cat", model="model")
             request.assert_not_called()
 
     def test_standard_chat_and_image_do_not_require_qiling_fields(self):

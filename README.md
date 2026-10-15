@@ -1,6 +1,6 @@
-# qiling-ai-sdk 0.4.0
+# qiling-ai-sdk 0.5.0
 
-器灵官方 Python SDK，支持软件授权、套餐权益、设备与额度管理、API Key 快速授权、开放模型调用及任务查询。支持 Python 3.9+，仅使用标准库，无运行时第三方依赖。
+器灵官方 Python SDK，支持软件授权、套餐权益、设备与额度管理、API Key 快速授权、开放模型调用及任务查询。支持 Python 3.9+，基础功能仅使用标准库；官方OpenAI桥接为可选依赖，需要Python3.10+。
 
 [官网](https://toolsoul.daniu7.cn) · [在线开发文档](https://867fas1f7s.apifox.cn/) · [AI 文档索引](https://867fas1f7s.apifox.cn/llms.txt) · [配套接入 Skills](https://github.com/qilingAI/qiling-skills)
 
@@ -11,7 +11,7 @@
 从官方仓库安装固定版本：
 
 ```sh
-python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.4.0"
+python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.0"
 ```
 
 或者克隆源码后安装：
@@ -69,7 +69,7 @@ finally:
 
 图片使用 `client.images.generate(model=..., prompt=..., response_format="url")`，从 `result.data[]` 读取 url 或 b64_json。尺寸、张数、返回格式等以当前模型文档为准。文本 `max_tokens` 与 `max_completion_tokens` 二选一；支持的采样、思考参数按模型能力传入。
 
-兼容范围是已公开的 Chat Completions（含 SSE）、图片生成、模型列表和单模型查询；Responses、工具调用、结构化输出及多模态文本输入未在当前文档开放。视频仍为器灵 JSON 异步扩展，不能直接当作官方 Videos API 的文件上传接口。参数支持范围以 [Apifox](https://867fas1f7s.apifox.cn/llms.txt) 为准，官方 SDK 用法见 [OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)。
+支持 Chat Completions（含SSE、函数工具/并行工具、工具结果续接、图文/音视频理解及JSON结构化输出）、图片生成/编辑/SSE、模型列表和单模型查询；按后台对应能力开关和供应商实际支持校验，Responses API尚未实现。视频仍为器灵 JSON 异步扩展，不能直接当作官方 Videos API 的文件上传接口。参数支持范围以 [Apifox](https://867fas1f7s.apifox.cn/llms.txt) 为准，官方 SDK 用法见 [OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)。
 
 可运行 `python examples/openai_chat.py --prompt "你好"` 或加 `--stream` 使用同一套配置；示例会消耗调用余额。示例默认关闭自动重试，避免网络结果不明时重复提交；如需业务重试，可通过 `extra_headers={"Idempotency-Key": saved_business_request_id}` 传入事先保存的固定请求号。
 
@@ -107,16 +107,16 @@ call_id = result["qiling"]["id"]  # 平台调用 ID，与 chatcmpl- 字符串不
 |---|---|
 | `models()` / `model(model_id)` | 标准 object=list,data 目录 / 单个 model 对象 |
 | `model_docs()` | 全部模型的动态请求 Schema、价格与限制 |
-| `chat(messages, *, model, request_id=None, idempotency_key=None, **options)` | 标准 choices/usage/qiling；支持当前公开的文本参数 |
+| `chat(messages, *, model, request_id=None, idempotency_key=None, **options)` | 标准choices/usage/qiling；支持tools/tool_choice/parallel_tool_calls、response_format及多模态消息 |
 | `image(prompt, *, model, request_id=None, response_format=None, ...)` | 标准 created/data/qiling；支持参考图与图层扩展 |
-| `video(prompt, *, model, request_id, ...)` | 器灵 JSON 视频任务；仍须明确业务请求号 |
+| `video(prompt=None, *, model, content=None, request_id=None, ...)` | 器灵JSON视频任务，支持官方content参考素材、ratio、generate_audio、首尾帧及尾帧返回 |
 | `estimate(kind, request)` | text/image/video 最大费用估算，不调用上游或冻结余额 |
 | `model_call(call_id)` / `cancel_video(call_id)` | 查询平台调用 / 请求取消视频 |
 | `balance()` / `usage(days=30, endpoint="")` / `logs(limit=50, offset=0, days=30, endpoint="")` | 调用余额、当前 Key 统计与记录 |
 | `endpoints()` / `submit_task(endpoint, input="", options=None)` / `task(task_id)` | 工具目录、提交与结果查询 |
 | `remove_ai(text)` | 提交去 AI 任务，再用返回的 task_id 查询 |
 
-文本/图片的 `request_id` 和 `Idempotency-Key` 现为可选，省略时由平台生成；需要可靠业务重试时保存并复用原值，不同内容不要共用。器灵客户端可传 `idempotency_key`，也保留 `request_id` 参数。视频仍必填 request_id。扩展费用在文本/图片结果 `qiling.billing`，平台调用 ID 在 `qiling.id`；视频保持顶层 id/status/billing 与 `data.video_url`。
+文本/图片的 `request_id` 和 `Idempotency-Key` 现为可选，省略时由平台生成；需要可靠业务重试时保存并复用原值，不同内容不要共用。器灵客户端可传 `idempotency_key`，也保留 `request_id` 参数。视频request_id也可省略或使用Idempotency-Key，手动重试应保留同一业务号。扩展费用在文本/图片结果 `qiling.billing`，平台调用 ID 在 `qiling.id`；视频保持顶层 id/status/billing 与 `data.video_url`。
 
 `usage`、`logs` 和 `submit_task` 的 options 为关键字参数。去 AI 的 `remove_ai(text)` 和 `submit_task("remove_ai", input=text)` 原样提交正文，保留真实换行与空行。不要先合并段落、清洗空白或将换行换成字面量反斜杠加 n；JSON 序列化由 SDK 完成。保留文件原始换行时可用 `Path(path).read_bytes().decode("utf-8-sig")`。
 
@@ -290,3 +290,50 @@ python examples/quickstart.py --help
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。
+
+
+## 0.5.0 模型能力与官方 SDK 桥接
+
+本版保留软件登录、会话、套餐及去AI原文换行处理。普通JSON调用不新增第三方依赖；流式与multipart图片编辑可在Python3.10+安装可选桥接：
+
+```sh
+python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.0"
+```
+
+```python
+import os
+from qiling_ai_sdk import QilingOpenClient
+
+client = QilingOpenClient(os.environ["QILING_BASE_URL"], os.environ["QILING_API_KEY"])
+with client.openai() as models:
+    # 桥接复用同一用户Key、Base URL和可选App Key，默认禁止自动重试。
+    for chunk in models.chat.completions.create(
+        model=os.environ["QILING_MODEL"],
+        messages=[{"role":"user","content":"你好"}], max_tokens=4096,
+        stream=True, stream_options={"include_usage":True},
+    ):
+        if chunk.choices:
+            print(chunk.choices[0].delta.content or "", end="")
+```
+
+工具使用标准tools函数定义和tool_choice，可配parallel_tool_calls。模型返回tool_calls时content允许为空；由软件校验并执行工具，再用tool_call_id回传结果、再次调用模型。保留原assistant消息（包括供应商要求的reasoning_content），每轮独立计费。视觉消息使用user.content中的text/image_url块，音频使用input_audio，视频理解使用video_url；response_format支持json_object和json_schema。对应能力未开启时平台会在调用供应商前拒绝。
+
+图片编辑使用`with client.openai() as models:`后调用`models.images.edit(model=..., prompt=..., image=open_file)`；图片流式使用`models.images.generate(..., stream=True)`。本SDK不提供单独临时媒体托管。
+
+```python
+# 视频使用器灵异步任务协议，content与prompt/便捷参考字段二选一。
+video = client.video(
+    model=os.environ["QILING_VIDEO_MODEL"],
+    content=[
+        {"type":"text","text":"参考图片与音频生成视频"},
+        {"type":"image_url","image_url":{"url":"https://example.com/替换为图片.png"},"role":"reference_image"},
+        {"type":"audio_url","audio_url":{"url":"https://example.com/替换为音频.mp3"},"role":"reference_audio"},
+    ], ratio="9:16", generate_audio=True, return_last_frame=True,
+    idempotency_key="保存并复用的唯一业务请求号",
+)
+print(client.model_call(video["id"]))
+```
+
+视频支持HTTPS/Data URI参考图/视频/音频、first_frame/last_frame、ratio、generate_audio、return_last_frame；查询和取消继续使用model_call/cancel_video。成功读取data.video_url和所请求且上游返回的data.last_frame_url，计费在billing。不能直接当作官方OpenAI Videos API或Seedance官方任务路径使用。额度预估按模型配置冻结上界，最后按上游真实用量结算；断流、用量缺失或未知结果只核对原任务，不新建请求重试。
+
+最新动态模型契约：平台根地址的`/api/v1/open/model-docs`；[正式开发者规范](https://toolsoul.daniu7.cn/api/v1/public/developer-openapi.json)。接入时先读该模型能力与Schema，不能靠别名推断权限。当前仅GitHub源码/Tag发布，不发布公共PyPI包。
