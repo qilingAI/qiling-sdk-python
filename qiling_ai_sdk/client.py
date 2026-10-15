@@ -351,7 +351,8 @@ class QilingAiClient:
                 return self._request(method, path, payload, auth, _retried=True, _generation=generation, extra_headers=extra_headers)
             raw = exc.read().decode("utf-8", errors="ignore")
             try:
-                detail = json.loads(raw).get("detail", raw)
+                parsed = json.loads(raw)
+                detail = parsed.get("detail", parsed.get("error", raw))
             except json.JSONDecodeError:
                 detail = raw or exc.reason
             raise QilingAiError(exc.code, detail) from exc

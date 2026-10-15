@@ -1,4 +1,4 @@
-# qiling-ai-sdk 0.3.0
+# qiling-ai-sdk 0.4.0
 
 器灵官方 Python SDK，支持软件授权、套餐权益、设备与额度管理、API Key 快速授权、开放模型调用及任务查询。支持 Python 3.9+，仅使用标准库，无运行时第三方依赖。
 
@@ -11,7 +11,7 @@
 从官方仓库安装固定版本：
 
 ```sh
-python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.3.0"
+python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.4.0"
 ```
 
 或者克隆源码后安装：
@@ -24,67 +24,109 @@ python -m pip install .
 
 包名为 `qiling-ai-sdk`，导入名为 `qiling_ai_sdk`；目前未发布到公共 PyPI，不要把同名来源不明的包当官方 SDK。
 
-## 选择客户端
+## 直接使用官方 OpenAI SDK
 
-| 客户端 | 凭证与用途 |
-|---|---|
-| `QilingAiClient` | 授权码登录取得 SDK 会话，用于软件权益、设备、普通额度、续费及公开文档保留的 SDK AI 视频接口 |
-| `QilingOpenClient` | 用户 API Key，用于文本、图片、视频、通用工具、调用余额和使用记录 |
-| `QilingAuthorizationClient` | 打开浏览器让用户确认，再一次性领取 API Key；不需要本地回调服务 |
+文本、图片生成和模型目录使用 OpenAI 格式，模型地址为已确认的平台根地址加 `/v1`。已有 OpenAI Chat Completions 程序，只需替换 API Key、Base URL 和 Model；不要求增加 App Key 或器灵请求号，也无需安装本 SDK。
 
-账号 token、SDK token 和用户 API Key 用途不同，不能互相替换。软件调用开放模型时传 `app_key`，服务端校验正式软件授权和套餐 AI 开关；独立工具直接调用可省略。App Key 使用平台返回值，不根据软件 ID 或 slug 自行推导。
-
-## 开放模型与工具
-
-已有 API Key 时，从环境或应用的安全存储读取：
+```sh
+python -m pip install openai
+```
 
 ```python
 import os
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ["QILING_API_KEY"],
+    base_url=os.environ["QILING_BASE_URL"],  # 完整模型 Base URL，含 /v1。
+    max_retries=0,
+)
+result = client.chat.completions.create(
+    model=os.environ["QILING_MODEL"],
+    messages=[{"role": "user", "content": "你好"}],
+)
+print(result.choices[0].message.content)
+```
+
+Base URL 从接入配置取得，不根据官网链接猜测，不填旧 `/api/v1/open`。模型名来自 `client.models.list().data[].id`；单模型查询用 `client.models.retrieve(model_id)`。价格及能力在模型的 `qiling.config`，完整动态文档仍为平台根地址下的 `/api/v1/open/model-docs`。
+
+流式调用保持官方用法：
+
+```python
+stream = client.chat.completions.create(
+    model=os.environ["QILING_MODEL"],
+    messages=[{"role": "user", "content": "你好"}],
+    stream=True,
+    stream_options={"include_usage": True},
+)
+try:
+    for chunk in stream:
+        if chunk.choices:
+            print(chunk.choices[0].delta.content or "", end="", flush=True)
+finally:
+    stream.close()
+```
+
+图片使用 `client.images.generate(model=..., prompt=..., response_format="url")`，从 `result.data[]` 读取 url 或 b64_json。尺寸、张数、返回格式等以当前模型文档为准。文本 `max_tokens` 与 `max_completion_tokens` 二选一；支持的采样、思考参数按模型能力传入。
+
+兼容范围是已公开的 Chat Completions（含 SSE）、图片生成、模型列表和单模型查询；Responses、工具调用、结构化输出及多模态文本输入未在当前文档开放。视频仍为器灵 JSON 异步扩展，不能直接当作官方 Videos API 的文件上传接口。参数支持范围以 [Apifox](https://867fas1f7s.apifox.cn/llms.txt) 为准，官方 SDK 用法见 [OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)。
+
+可运行 `python examples/openai_chat.py --prompt "你好"` 或加 `--stream` 使用同一套配置；示例会消耗调用余额。示例默认关闭自动重试，避免网络结果不明时重复提交；如需业务重试，可通过 `extra_headers={"Idempotency-Key": saved_business_request_id}` 传入事先保存的固定请求号。
+
+## 器灵客户端与平台功能
+
+本 SDK 继续提供软件授权、快速授权、调用余额、工具任务及视频扩展，运行时仅依赖标准库；上面的 OpenAI SDK 是按需单独安装的依赖。
+
+| 客户端 | 凭证与用途 |
+|---|---|
+| `QilingAiClient` | 授权码取得 SDK 会话，用于软件权益、设备、普通额度、续费及文档保留的 SDK AI 视频接口 |
+| `QilingOpenClient` | 用户 API Key；普通文本、图片返回标准 OpenAI JSON，另支持工具、余额和视频扩展 |
+| `QilingAuthorizationClient` | 用户在浏览器确认后一次性领取 API Key，无需本地回调服务 |
+
+账号 token、SDK token 和用户 API Key 不能互换。已登记的软件需要来源检查时，器灵客户端传 `app_key`，官方 OpenAI SDK 可设置 `default_headers={"x-qiling-app-key": registered_app_key}`；独立模型调用可省略，不需要为此新建软件。
+
+```python
 from qiling_ai_sdk import QilingOpenClient
 
 client = QilingOpenClient(
-    os.environ["QILING_API_URL"],
+    os.environ["QILING_BASE_URL"],  # 含 /v1 的模型 Base URL 或平台根地址均可。
     os.environ["QILING_API_KEY"],
-    app_key=os.environ.get("QILING_APP_KEY"),  # 软件接入必填；独立调用可省略。
 )
-models = client.models()
-docs = client.model_docs()
-balance = client.balance()
-```
-
-先查询 `models()` 和 `model_docs()`，从返回值选择模型，按每项 `request_schema`、`limits` 和 `pricing` 构造请求。返回的示例是说明数据，不应自动执行。不要假定有默认模型、固定模型清单、价格或尺寸。
-
-以下调用会消耗用户调用余额。`model` 和 `request_id` 都是必填参数；业务请求号在首次提交前生成并保存，同一业务重试复用，不同内容不能共用。
-
-```python
-request_id = saved_business_request_id  # 来自应用已持久化的业务请求。
 result = client.chat(
     [{"role": "user", "content": "你好"}],
-    model=selected_model,
-    request_id=request_id,
-    max_tokens=1000,
+    model=os.environ["QILING_MODEL"],
+    max_completion_tokens=1000,
 )
-call_id = result["id"]  # 保存后用 model_call(call_id) 查询原调用。
+print(result["choices"][0]["message"]["content"])
+call_id = result["qiling"]["id"]  # 平台调用 ID，与 chatcmpl- 字符串不同。
 ```
+
+`QilingOpenClient.chat` 是普通 JSON 方法，流式使用官方 OpenAI SDK；传 `stream=True` 会在发请求前提示改用官方 SDK。平台根地址自动用于工具和账户接口，不会把 `/v1` 重复拼接。
 
 | 方法 | 用途 |
 |---|---|
-| `chat(messages, *, model, request_id, max_tokens=None, temperature=None)` | 非流式文本调用 |
-| `image(prompt, *, model, request_id, n=1, size=None, reference_images=None, layer_decomposition=False)` | 图片生成、参考图与图层拆分 |
-| `video(prompt, *, model, request_id, duration=5, resolution="720p", reference_images=None, reference_video=None, reference_seconds=0)` | 创建视频任务 |
-| `estimate(kind, request)` | 以完整调用参数预估费用，kind 为 text/image/video；不调用上游、不冻结余额 |
-| `model_call(call_id)` / `cancel_video(call_id)` | 查询原模型任务 / 请求取消视频 |
+| `models()` / `model(model_id)` | 标准 object=list,data 目录 / 单个 model 对象 |
+| `model_docs()` | 全部模型的动态请求 Schema、价格与限制 |
+| `chat(messages, *, model, request_id=None, idempotency_key=None, **options)` | 标准 choices/usage/qiling；支持当前公开的文本参数 |
+| `image(prompt, *, model, request_id=None, response_format=None, ...)` | 标准 created/data/qiling；支持参考图与图层扩展 |
+| `video(prompt, *, model, request_id, ...)` | 器灵 JSON 视频任务；仍须明确业务请求号 |
+| `estimate(kind, request)` | text/image/video 最大费用估算，不调用上游或冻结余额 |
+| `model_call(call_id)` / `cancel_video(call_id)` | 查询平台调用 / 请求取消视频 |
 | `balance()` / `usage(days=30, endpoint="")` / `logs(limit=50, offset=0, days=30, endpoint="")` | 调用余额、当前 Key 统计与记录 |
-| `endpoints()` / `submit_task(endpoint, input="", options=None)` / `task(task_id)` | 通用工具目录、提交与结果查询 |
-| `remove_ai(text)` | 提交去 AI 任务，保存返回的 task_id 后用 task 查询 |
+| `endpoints()` / `submit_task(endpoint, input="", options=None)` / `task(task_id)` | 工具目录、提交与结果查询 |
+| `remove_ai(text)` | 提交去 AI 任务，再用返回的 task_id 查询 |
 
-`usage`、`logs` 的参数，以及 `submit_task` 的 `options` 为关键字参数。通用工具的 task_id 和模型调用的 id 使用不同查询接口。
+文本/图片的 `request_id` 和 `Idempotency-Key` 现为可选，省略时由平台生成；需要可靠业务重试时保存并复用原值，不同内容不要共用。器灵客户端可传 `idempotency_key`，也保留 `request_id` 参数。视频仍必填 request_id。扩展费用在文本/图片结果 `qiling.billing`，平台调用 ID 在 `qiling.id`；视频保持顶层 id/status/billing 与 `data.video_url`。
 
-去 AI 改文依赖原文段落结构。`remove_ai(text)` 和 `submit_task("remove_ai", input=text)` 会原样提交正文，保留真实换行与空行。调用前不要把段落用空格合并、清洗空白，或手动将换行替换成字面量反斜杠加 n；JSON 序列化由 SDK 完成。需要保留文件原始换行格式时可用 `Path(path).read_bytes().decode("utf-8-sig")` 读取正文。
+`usage`、`logs` 和 `submit_task` 的 options 为关键字参数。去 AI 的 `remove_ai(text)` 和 `submit_task("remove_ai", input=text)` 原样提交正文，保留真实换行与空行。不要先合并段落、清洗空白或将换行换成字面量反斜杠加 n；JSON 序列化由 SDK 完成。保留文件原始换行时可用 `Path(path).read_bytes().decode("utf-8-sig")`。
 
-模型生成前冻结预计费用，完成后按实际用量和请求开始时的价格快照结算；不要再调用 `consume_quota` 为模型重复扣次。价格已经包含倍率，不再手动乘算。费用为十进制字符串，需计算时使用 `decimal.Decimal`；`billing.fee=null` 表示未完成或待核对，不能视为免费。
+模型费用使用用户调用余额，与普通软件次数额度独立，不追加 `consume_quota`。报价已含倍率，十进制金额计算用 Decimal；费用为空不表示免费。视频 submitting/queued/running/cancel_requested 查询同一平台 id，unknown/review 等待核对。取消被接受不代表最终取消或退款；流式断开也不表示免费，不自动新建请求重试。
 
-`succeeded` 才表示生成完成。`queued/running/cancel_requested` 继续查询同一 id；`unknown/review` 等待核对，不重新生成。取消请求被接受不代表取消或退款已完成。网络结果不明时 SDK 不自动重发生成请求，保留业务请求号并查询原任务。HTTP 402 表示余额不足，401 需要处理 API Key，不能用 SDK refresh_token 刷新 API Key。
+模型错误采用 `{"error":{"message":...,"type":...,"param":...,"code":...}}`，器灵 SDK 将其中 error 对象保留在 `QilingAiError.detail`；旧平台接口的 detail 错误仍支持。HTTP 400 参数不支持，401 密钥无效，402 余额不足，403 权限不足，409 冲突或结果待核对。不能用 SDK refresh_token 刷新 API Key。
+
+## 从 0.3.x 升级
+
+模型路径从 `/api/v1/open/...` 改为 `/v1/...`。文本正文从旧 data 改读 `choices[0].message.content`，图片改读 `data[]`；目录从旧 models 改读 `data[]`，模型名是 id。平台调用 ID 和费用改读 `qiling.id/billing`。视频仍使用顶层 id；工具、余额和 API Key 快速授权路径保持不变。不要继续向已移除的旧模型路径发请求。
 
 ## 浏览器快速授权
 
@@ -108,7 +150,7 @@ docs = client.model_docs()
 
 ## 从 0.2.x 升级
 
-旧 `QilingAiClient.ai_chat/ai_image/ai_translate` 及对应的 SDK token AI 入口已移除。文本和图片改用 `QilingOpenClient.chat/image`，传用户 API Key、明确模型和业务请求号；翻译可按当前文本模型文档构造对话请求。软件授权登录、设备和普通次数扣减继续保留。
+旧 `QilingAiClient.ai_chat/ai_image/ai_translate` 及对应的 SDK token AI 入口已移除。文本和图片改用 `QilingOpenClient.chat/image`，传用户 API Key 和模型，文本/图片业务请求号可选；翻译可按当前文本模型文档构造对话请求。软件授权登录、设备和普通次数扣减继续保留。
 
 SDK Bearer 的视频接口按当前公开文档提供：`ai_models()`、`ai_estimate(kind, **request)`、`ai_video(prompt, *, model, request_id, ...)`、`ai_task(task_id)`、`ai_cancel_video(task_id)`、`ai_bills(page=1, page_size=20)`。先登录或校验恢复授权上下文；视频同样按调用余额结算，不扣普通次数。文本和图片使用上面的 API Key 客户端。
 
@@ -238,6 +280,7 @@ if plans:
 ## 开发与验证
 
 ```sh
+python -m pip install openai httpx  # 仅官方 SDK 兼容测试需要。
 python -m unittest discover -s tests -v
 python examples/quickstart.py --help
 ```

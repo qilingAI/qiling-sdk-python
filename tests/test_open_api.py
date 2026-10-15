@@ -26,36 +26,80 @@ class OpenApiTests(unittest.TestCase):
         direct = QilingOpenClient("https://api.example.test", "user-key")
         with patch.object(http, "urlopen", return_value=io.BytesIO(b'{}')) as request:
             direct.models()
-        self.assertIsNone(request.call_args.args[0].get_header("X-qiling-app-key"))
+        req = request.call_args.args[0]
+        self.assertEqual(req.full_url, "https://api.example.test/v1/models")
+        self.assertEqual(req.get_header("Authorization"), "Bearer user-key")
+        self.assertIsNone(req.get_header("X-api-key"))
+        self.assertIsNone(req.get_header("X-qiling-app-key"))
 
     def test_generation_keeps_business_request_id_and_all_supported_inputs(self):
         calls = []
 
         def response(req, **kwargs):
             calls.append(req)
-            return io.BytesIO(b'{"id": 42, "status": "queued", "ok": false}')
+            return io.BytesIO(b'{}')
 
         with patch.object(http, "urlopen", side_effect=response):
             for _ in range(2):
-                result = self.client.chat([{"role": "user", "content": "hello"}], model="text-model", request_id="business-1", max_tokens=50)
+                self.client.chat([{"role": "user", "content": "hello"}], model="text-model", request_id="business-1", max_tokens=50)
             self.client.image("layers", model="image-model", request_id="business-2", n=2, size="auto", reference_images=["https://example.test/a.png"], layer_decomposition=True)
             self.client.video("waves", model="video-model", request_id="business-3", duration=10, reference_video="https://example.test/a.mp4", reference_seconds=5)
-        self.assertFalse(result["ok"])
         self.assertEqual([json.loads(r.data)["request_id"] for r in calls], ["business-1", "business-1", "business-2", "business-3"])
         self.assertEqual(json.loads(calls[2].data)["reference_images"], ["https://example.test/a.png"])
         self.assertTrue(json.loads(calls[2].data)["layer_decomposition"])
         self.assertEqual(json.loads(calls[3].data)["reference_seconds"], 5)
         self.assertEqual(len(calls), 4)
 
-    def test_model_and_request_id_are_required_before_network(self):
+    def test_model_is_required_and_only_video_requires_request_id(self):
         with patch.object(http, "urlopen") as request:
             for method, value in [(self.client.chat, []), (self.client.image, "cat"), (self.client.video, "cat")]:
                 with self.subTest(method=method.__name__):
                     with self.assertRaises(TypeError):
                         method(value, request_id="business-1")
-                    with self.assertRaises(TypeError):
-                        method(value, model="model")
+            with self.assertRaises(TypeError):
+                self.client.video("cat", model="model")
             request.assert_not_called()
+
+    def test_standard_chat_and_image_do_not_require_qiling_fields(self):
+        replies = [
+            {"id": "chatcmpl-42", "object": "chat.completion", "choices": [{"message": {"content": "hello"}}], "qiling": {"id": 42}},
+            {"created": 1, "data": [{"url": "https://example.test/cat.png"}], "qiling": {"id": 43}},
+        ]
+        with patch.object(http, "urlopen", side_effect=[io.BytesIO(json.dumps(r).encode()) for r in replies]) as request:
+            chat = self.client.chat([{"role": "user", "content": "hi"}], model="text-model", max_completion_tokens=100, top_p=0.9, stop=["END"], reasoning_effort="low")
+            image = self.client.image("cat", model="image-model", response_format="url")
+        self.assertEqual(chat["choices"][0]["message"]["content"], "hello")
+        self.assertEqual(image["data"][0]["url"], "https://example.test/cat.png")
+        payloads = [json.loads(c.args[0].data) for c in request.call_args_list]
+        self.assertNotIn("request_id", payloads[0])
+        self.assertNotIn("max_tokens", payloads[0])
+        self.assertEqual(payloads[0]["max_completion_tokens"], 100)
+        self.assertEqual(payloads[0]["stop"], ["END"])
+        self.assertNotIn("request_id", payloads[1])
+        self.assertNotIn("reference_images", payloads[1])
+        self.assertEqual(payloads[1]["response_format"], "url")
+
+    def test_idempotency_header_is_preserved_and_stream_uses_official_sdk(self):
+        with patch.object(http, "urlopen", side_effect=lambda *a, **k: io.BytesIO(b'{}')) as request:
+            for _ in range(2):
+                self.client.chat([{"role": "user", "content": "hi"}], model="model", idempotency_key="same-business")
+            self.client.image("cat", model="model", idempotency_key="same-image")
+            for call in request.call_args_list[:2]:
+                self.assertEqual(call.args[0].get_header("Idempotency-key"), "same-business")
+            self.assertEqual(request.call_args.args[0].get_header("Idempotency-key"), "same-image")
+        with patch.object(http, "urlopen") as request:
+            with self.assertRaisesRegex(ValueError, "OpenAI SDK"):
+                self.client.chat([{"role": "user", "content": "hi"}], model="model", stream=True)
+            request.assert_not_called()
+
+    def test_base_url_with_v1_does_not_duplicate_prefix_or_change_tool_routes(self):
+        for base in ["https://api.example.test", "https://api.example.test/", "https://api.example.test/v1", "https://api.example.test/v1/"]:
+            with self.subTest(base=base), patch.object(http, "urlopen", side_effect=lambda *a, **k: io.BytesIO(b'{}')) as request:
+                client = QilingOpenClient(base, "user-key")
+                client.model("provider/model name")
+                client.model_docs()
+                self.assertEqual(request.call_args_list[0].args[0].full_url, "https://api.example.test/v1/models/provider%2Fmodel%20name")
+                self.assertEqual(request.call_args_list[1].args[0].full_url, "https://api.example.test/api/v1/open/model-docs")
 
     def test_query_cancel_estimate_and_generic_tasks_use_distinct_routes(self):
         calls = []
@@ -76,9 +120,9 @@ class OpenApiTests(unittest.TestCase):
             self.client.endpoints()
             self.client.model_docs()
         self.assertEqual([(r.method, urlsplit(r.full_url).path) for r in calls[:3]], [
-            ("GET", "/api/v1/open/model-calls/42"),
-            ("DELETE", "/api/v1/open/model-calls/42"),
-            ("POST", "/api/v1/open/models/estimate"),
+            ("GET", "/v1/model-calls/42"),
+            ("DELETE", "/v1/model-calls/42"),
+            ("POST", "/v1/models/estimate"),
         ])
         self.assertEqual(json.loads(calls[2].data)["request"]["request_id"], "business-1")
         self.assertEqual(json.loads(calls[3].data), {"endpoint": "tool", "input": "hello", "options": {"language": "zh"}})
@@ -95,6 +139,13 @@ class OpenApiTests(unittest.TestCase):
                 self.assertEqual(raised.exception.status, status)
                 self.assertEqual(raised.exception.detail, {"code": "FAILED"})
                 self.assertEqual(request.call_count, 1)
+        error = HTTPError("https://api.example.test", 400, "error", {}, io.BytesIO(b'{"error":{"message":"Unsupported parameter","type":"invalid_request_error","param":"tools","code":"UNSUPPORTED_PARAMETER"}}'))
+        with patch.object(http, "urlopen", side_effect=error) as request:
+            with self.assertRaises(QilingAiError) as raised:
+                self.client.chat([{"role": "user", "content": "hi"}], model="model", tools=[])
+        self.assertEqual(raised.exception.detail["code"], "UNSUPPORTED_PARAMETER")
+        self.assertEqual(raised.exception.detail["param"], "tools")
+        self.assertEqual(request.call_count, 1)
         with patch.object(http, "urlopen", side_effect=URLError("timeout")) as request:
             with self.assertRaises(URLError):
                 self.client.video("cat", model="video-model", request_id="business-1")
