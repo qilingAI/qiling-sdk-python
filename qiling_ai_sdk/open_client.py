@@ -76,9 +76,11 @@ class QilingOpenClient:
     def image(
         self, prompt: str, *, model: str, request_id: str | None = None, n: int = 1, size: str | None = None,
         reference_images: list[str] | None = None, layer_decomposition: bool = False,
-        response_format: str | None = None, idempotency_key: str | None = None,
+        response_format: str | None = None, idempotency_key: str | None = None, stream: bool = False,
     ) -> dict[str, Any]:
         """Return the OpenAI created/data/qiling JSON without reshaping image entries."""
+        if stream:
+            raise ValueError("图片流式调用请使用 client.openai().images.generate(..., stream=True) 或官方 OpenAI SDK。")
         payload = {"model": model, "prompt": prompt, "n": n}
         for key, value in {"request_id": request_id, "size": size, "reference_images": reference_images, "response_format": response_format}.items():
             if value is not None:
@@ -116,7 +118,7 @@ class QilingOpenClient:
         try:
             from openai import OpenAI
         except ImportError:
-            raise RuntimeError("请安装可选的官方openai依赖；0.5.0的openai可选依赖需要Python3.10+。") from None
+            raise RuntimeError("请安装可选的官方openai依赖；openai可选依赖需要Python3.10+。") from None
         return OpenAI(
             base_url=self._http.base_url + "/v1", api_key=self._api_key,
             default_headers={"x-qiling-app-key": self.app_key} if self.app_key else {},

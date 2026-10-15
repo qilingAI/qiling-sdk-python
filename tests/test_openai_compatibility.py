@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import unittest
+from email.parser import BytesParser
+from email.policy import default
 
 try:
     import httpx
@@ -80,3 +82,72 @@ class OfficialOpenAiTests(unittest.TestCase):
                 client.chat.completions.create(model="platform-model", messages=[{"role": "user", "content": "hi"}])
         self.assertEqual(raised.exception.code, "UNSUPPORTED_PARAMETER")
         self.assertEqual(raised.exception.param, "tools")
+
+    def test_tools_structured_output_and_tool_result_round_trip(self):
+        requests = []
+        tool_call = {"id": "call-1", "type": "function", "function": {"name": "lookup", "arguments": '{"query":"test"}'}}
+
+        def handler(request):
+            requests.append(json.loads(request.content))
+            message = {"role": "assistant", "content": None, "tool_calls": [tool_call], "reasoning_content": "preserve this"} if len(requests) == 1 else {"role": "assistant", "content": '{"answer":"found"}'}
+            return httpx.Response(200, json={"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "platform-model", "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if len(requests) == 1 else "stop"}]})
+
+        messages = [{"role": "user", "content": [{"type": "text", "text": "find it"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,Zml4dHVyZQ=="}}]}]
+        tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}}]
+        schema = {"type": "json_schema", "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {"answer": {"type": "string"}}}, "strict": True}}
+        with self.client(handler) as client:
+            first = client.chat.completions.create(model="platform-model", messages=messages, tools=tools, tool_choice="required", parallel_tool_calls=True)
+            assistant = first.choices[0].message.model_dump(exclude_none=True)
+            self.assertEqual(first.choices[0].message.tool_calls[0].function.name, "lookup")
+            messages.extend([assistant, {"role": "tool", "tool_call_id": "call-1", "content": "found"}])
+            final = client.chat.completions.create(model="platform-model", messages=messages, response_format=schema)
+        self.assertEqual(requests[0]['tools'], tools)
+        self.assertTrue(requests[0]['parallel_tool_calls'])
+        self.assertEqual(requests[1]['messages'][1]['reasoning_content'], "preserve this")
+        self.assertEqual(requests[1]['messages'][2]['tool_call_id'], "call-1")
+        self.assertEqual(requests[1]['response_format'], schema)
+        self.assertEqual(json.loads(final.choices[0].message.content), {"answer": "found"})
+
+    def test_image_edit_multipart_preserves_uploads_and_standard_response(self):
+        uploads = []
+
+        def handler(request):
+            self.assertEqual(request.url.path, '/v1/images/edits')
+            self.assertEqual(request.headers['authorization'], 'Bearer fixture-api-key')
+            mime = BytesParser(policy=default).parsebytes(('Content-Type: ' + request.headers['content-type'] + '\r\nMIME-Version: 1.0\r\n\r\n').encode() + request.content)
+            fields = {}
+            for part in mime.iter_parts():
+                name = part.get_param('name', header='content-disposition')
+                if part.get_filename():
+                    uploads.append((name, part.get_filename(), part.get_payload(decode=True)))
+                else:
+                    fields[name] = part.get_payload(decode=True).decode()
+            self.assertEqual(fields['model'], 'image-model')
+            self.assertEqual(fields['prompt'], 'edit the images')
+            return httpx.Response(200, json={"created": 1, "data": [{"b64_json": "Zml4dHVyZQ=="}]})
+
+        with self.client(handler) as client:
+            result = client.images.edit(model='image-model', prompt='edit the images', image=[('first.png', b'first-image', 'image/png'), ('second.png', b'second-image', 'image/png')])
+        self.assertEqual(result.data[0].b64_json, 'Zml4dHVyZQ==')
+        self.assertEqual([u[2] for u in uploads], [b'first-image', b'second-image'])
+        self.assertTrue(all(u[0] == 'image[]' for u in uploads))
+
+    def test_official_sdk_reads_image_generation_and_edit_streams(self):
+        for edit in [False, True]:
+            with self.subTest(edit=edit):
+                prefix = 'image_edit' if edit else 'image_generation'
+                event = {"type": prefix + '.completed', "b64_json": 'Zml4dHVyZQ==', "created_at": 1, "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
+
+                def handler(request):
+                    self.assertEqual(request.url.path, '/v1/images/edits' if edit else '/v1/images/generations')
+                    data = 'event: ' + event['type'] + '\ndata: ' + json.dumps(event) + '\n\n'
+                    return httpx.Response(200, content=data, headers={'content-type': 'text/event-stream'})
+
+                with self.client(handler) as client:
+                    stream = client.images.edit(model='image-model', prompt='edit', image=('fixture.png', b'fixture', 'image/png'), stream=True) if edit else client.images.generate(model='image-model', prompt='cat', stream=True)
+                    try:
+                        events = list(stream)
+                    finally:
+                        stream.close()
+                self.assertEqual(events[0].type, prefix + '.completed')
+                self.assertEqual(events[0].b64_json, 'Zml4dHVyZQ==')

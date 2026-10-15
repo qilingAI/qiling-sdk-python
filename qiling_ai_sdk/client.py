@@ -288,15 +288,26 @@ class QilingAiClient:
         })
 
     def ai_video(
-        self, prompt: str, *, request_id: str, model: str, duration: int = 5, resolution: str = "720p",
-        reference_images: list[str] | None = None, reference_video: str | None = None, reference_seconds: int = 0,
+        self, prompt: str | None = None, *, request_id: str, model: str,
+        content: list[dict[str, Any]] | None = None, duration: int = 5, resolution: str = "720p",
+        ratio: str = "16:9", generate_audio: bool | None = None, return_last_frame: bool = False,
+        reference_images: list[str] | None = None, reference_video: str | None = None,
+        reference_audios: list[str] | None = None, first_frame: str | None = None,
+        last_frame: str | None = None, reference_seconds: int = 0,
     ) -> dict[str, Any]:
         """提交一次视频任务；重试复用业务 request_id，随后查询返回的任务 id。"""
-        return self._request("POST", "/api/v1/sdk/ai/video", {
-            "app_key": self._ai_app_key(), "request_id": request_id, "model": model, "prompt": prompt,
-            "duration": duration, "resolution": resolution, "reference_images": reference_images or [],
-            "reference_video": reference_video, "reference_seconds": reference_seconds,
-        })
+        references = {"prompt": prompt, "reference_images": reference_images,
+                      "reference_video": reference_video, "reference_audios": reference_audios,
+                      "first_frame": first_frame, "last_frame": last_frame}
+        if content is not None and any(references.values()):
+            raise ValueError("content与prompt、参考素材便捷字段不能同时填写。")
+        payload = {"app_key": self._ai_app_key(), "request_id": request_id, "model": model,
+                   "duration": duration, "resolution": resolution, "ratio": ratio,
+                   "return_last_frame": return_last_frame, "reference_seconds": reference_seconds}
+        for name, value in {**references, "content": content, "generate_audio": generate_audio}.items():
+            if value is not None:
+                payload[name] = value
+        return self._request("POST", "/api/v1/sdk/ai/video", payload)
 
     def ai_task(self, task_id: int) -> dict[str, Any]:
         return self._request("GET", f"/api/v1/sdk/ai/tasks/{int(task_id)}")

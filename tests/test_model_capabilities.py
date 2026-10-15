@@ -3,7 +3,7 @@ import io
 import json
 import unittest
 from unittest.mock import patch
-from qiling_ai_sdk import QilingOpenClient
+from qiling_ai_sdk import QilingOpenClient, QilingAiClient
 from qiling_ai_sdk import client as http
 
 
@@ -38,6 +38,34 @@ class ModelCapabilitiesTests(unittest.TestCase):
         self.assertTrue(body['generate_audio'])
         self.assertTrue(body['return_last_frame'])
         self.assertEqual(request.get_header('Idempotency-key'), 'video-business')
+
+    def test_sdk_bearer_video_supports_content_frames_and_audio_options(self):
+        sdk = QilingAiClient('https://example.test', token='sdk-token')
+        sdk.license_session = {'app': {'app_key': 'registered-app'}}
+        parts = [{'type': 'text', 'text': '场景'}, {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,Zml4dHVyZQ=='}, 'role': 'first_frame'}]
+        with patch.object(http, 'urlopen', side_effect=lambda *a, **k: io.BytesIO(b'{}')) as send:
+            sdk.ai_video(model='video-model', request_id='same-business', content=parts, ratio='9:16', generate_audio=False, return_last_frame=True)
+            request = send.call_args.args[0]
+            body = json.loads(request.data)
+            self.assertEqual(request.full_url, 'https://example.test/api/v1/sdk/ai/video')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer sdk-token')
+            self.assertEqual(body['content'], parts)
+            self.assertNotIn('prompt', body)
+            self.assertFalse(body['generate_audio'])
+            self.assertTrue(body['return_last_frame'])
+            self.assertEqual(body['request_id'], 'same-business')
+            sdk.ai_video('场景', model='video-model', request_id='frames', first_frame='https://example.test/first.png', last_frame='https://example.test/last.png')
+            self.assertEqual(json.loads(send.call_args.args[0].data)['last_frame'], 'https://example.test/last.png')
+        with patch.object(http, 'urlopen') as send:
+            with self.assertRaises(ValueError):
+                sdk.ai_video('场景', model='video-model', request_id='mixed', content=parts)
+            send.assert_not_called()
+
+    def test_image_stream_is_rejected_before_json_request_with_bridge_guidance(self):
+        with patch.object(http, 'urlopen') as send:
+            with self.assertRaisesRegex(ValueError, 'openai'):
+                self.client.image('场景', model='image-model', stream=True)
+            send.assert_not_called()
 
     def test_video_convenience_references_and_ambiguous_fields(self):
         with patch.object(http, 'urlopen', return_value=io.BytesIO(b'{}')) as send:

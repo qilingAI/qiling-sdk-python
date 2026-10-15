@@ -1,4 +1,4 @@
-# qiling-ai-sdk 0.5.0
+# qiling-ai-sdk 0.5.1
 
 器灵官方 Python SDK，支持软件授权、套餐权益、设备与额度管理、API Key 快速授权、开放模型调用及任务查询。支持 Python 3.9+，基础功能仅使用标准库；官方OpenAI桥接为可选依赖，需要Python3.10+。
 
@@ -11,7 +11,7 @@
 从官方仓库安装固定版本：
 
 ```sh
-python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.0"
+python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.1"
 ```
 
 或者克隆源码后安装：
@@ -152,7 +152,7 @@ docs = client.model_docs()
 
 旧 `QilingAiClient.ai_chat/ai_image/ai_translate` 及对应的 SDK token AI 入口已移除。文本和图片改用 `QilingOpenClient.chat/image`，传用户 API Key 和模型，文本/图片业务请求号可选；翻译可按当前文本模型文档构造对话请求。软件授权登录、设备和普通次数扣减继续保留。
 
-SDK Bearer 的视频接口按当前公开文档提供：`ai_models()`、`ai_estimate(kind, **request)`、`ai_video(prompt, *, model, request_id, ...)`、`ai_task(task_id)`、`ai_cancel_video(task_id)`、`ai_bills(page=1, page_size=20)`。先登录或校验恢复授权上下文；视频同样按调用余额结算，不扣普通次数。文本和图片使用上面的 API Key 客户端。
+SDK Bearer 的视频接口按当前公开文档提供：`ai_models()`、`ai_estimate(kind, **request)`、`ai_video(prompt=None, *, model, request_id, content=None, ...)`、`ai_task(task_id)`、`ai_cancel_video(task_id)`、`ai_bills(page=1, page_size=20)`。先登录或校验恢复授权上下文；视频同样按调用余额结算，不扣普通次数。该 SDK Bearer 接口仍要求 request_id，支持与开放视频相同的 content、ratio、generate_audio、return_last_frame、参考音频和首尾帧参数。文本和图片使用上面的 API Key 客户端。
 
 ## 上架前先调试
 
@@ -292,12 +292,12 @@ python examples/quickstart.py --help
 MIT，见 [LICENSE](LICENSE)。
 
 
-## 0.5.0 模型能力与官方 SDK 桥接
+## 模型能力与官方 SDK 桥接
 
 本版保留软件登录、会话、套餐及去AI原文换行处理。普通JSON调用不新增第三方依赖；流式与multipart图片编辑可在Python3.10+安装可选桥接：
 
 ```sh
-python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.0"
+python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.1"
 ```
 
 ```python
@@ -336,4 +336,10 @@ print(client.model_call(video["id"]))
 
 视频支持HTTPS/Data URI参考图/视频/音频、first_frame/last_frame、ratio、generate_audio、return_last_frame；查询和取消继续使用model_call/cancel_video。成功读取data.video_url和所请求且上游返回的data.last_frame_url，计费在billing。不能直接当作官方OpenAI Videos API或Seedance官方任务路径使用。额度预估按模型配置冻结上界，最后按上游真实用量结算；断流、用量缺失或未知结果只核对原任务，不新建请求重试。
 
-最新动态模型契约：平台根地址的`/api/v1/open/model-docs`；[正式开发者规范](https://toolsoul.daniu7.cn/api/v1/public/developer-openapi.json)。接入时先读该模型能力与Schema，不能靠别名推断权限。当前仅GitHub源码/Tag发布，不发布公共PyPI包。
+最新动态模型契约：已确认平台根地址下的 `/api/v1/open/model-docs` 和 `/api/v1/public/developer-openapi.json`；静态参考见 [Apifox 索引](https://867fas1f7s.apifox.cn/llms.txt)。接入时先读该模型能力与Schema，不能靠别名推断权限。当前仅GitHub源码/Tag发布，不发布公共PyPI包。
+
+## 0.5.1 更新
+
+补齐 SDK Bearer 视频接口的多模态 content、参考音频、首尾帧和音频生成参数。`QilingOpenClient.image` 是普通 JSON 调用；`stream=True` 会在发请求前提示使用官方 SDK 或 `client.openai()` 桥接，避免将 SSE 当作 JSON。图片编辑及图片流式继续沿用官方 `images.edit/generate`，不新增上传协议。
+
+工具、结构化输出、音视频理解、图片编辑/流式和视频素材能力均取决于所选模型的后台配置及供应商支持。先核对动态文档，不把能力列表当作每个模型均已支持的承诺。
