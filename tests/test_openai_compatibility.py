@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import json
+import io
+import os
+import runpy
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 from email.parser import BytesParser
 from email.policy import default
 
@@ -82,6 +87,23 @@ class OfficialOpenAiTests(unittest.TestCase):
                 client.chat.completions.create(model="platform-model", messages=[{"role": "user", "content": "hi"}])
         self.assertEqual(raised.exception.code, "UNSUPPORTED_PARAMETER")
         self.assertEqual(raised.exception.param, "tools")
+
+    def test_thinking_cli_sends_extension_at_top_level_and_prints_final_only(self):
+        requests = []
+
+        def handler(request):
+            requests.append(json.loads(request.content))
+            return httpx.Response(200, json={
+                "id": "chatcmpl-42", "object": "chat.completion", "created": 1, "model": "platform-model",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "final", "reasoning_content": "separate reasoning"}, "finish_reason": "stop"}],
+            })
+
+        example = Path(__file__).resolve().parents[1] / 'examples/openai_chat.py'
+        with self.client(handler) as client, patch('openai.OpenAI', return_value=client), patch.dict(os.environ, {'QILING_API_KEY': 'fixture-key', 'QILING_BASE_URL': 'https://api.example.test/v1', 'QILING_MODEL': 'platform-model'}), patch('sys.argv', [str(example), '--prompt', 'hello', '--thinking', 'disabled']), patch('sys.stdout', new_callable=io.StringIO) as output:
+            runpy.run_path(str(example), run_name='__main__')
+        self.assertEqual(requests[0]['thinking'], {'type': 'disabled'})
+        self.assertNotIn('extra_body', requests[0])
+        self.assertEqual(output.getvalue().strip(), 'final')
 
     def test_tools_structured_output_and_tool_result_round_trip(self):
         requests = []

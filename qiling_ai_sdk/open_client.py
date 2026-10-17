@@ -62,13 +62,13 @@ class QilingOpenClient:
     def chat(
         self, messages: list[dict[str, Any]], *, model: str, request_id: str | None = None,
         max_tokens: int | None = None, temperature: float | None = None,
-        idempotency_key: str | None = None, **options: Any,
+        idempotency_key: str | None = None, thinking: dict[str, str] | None = None, **options: Any,
     ) -> dict[str, Any]:
         """Return OpenAI choices/usage/qiling JSON. Use the official OpenAI SDK for SSE."""
         if options.get("stream"):
             raise ValueError("流式调用请使用官方 OpenAI SDK，base_url 设置为已确认的平台根地址加 /v1。")
         payload = {"model": model, "messages": messages, **options}
-        for key, value in {"request_id": request_id, "max_tokens": max_tokens, "temperature": temperature}.items():
+        for key, value in {"request_id": request_id, "max_tokens": max_tokens, "temperature": temperature, "thinking": thinking}.items():
             if value is not None:
                 payload[key] = value
         return self._request("POST", "/chat/completions", payload, model_api=True, idempotency_key=idempotency_key)

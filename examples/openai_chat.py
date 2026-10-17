@@ -9,17 +9,20 @@ def main():
     parser = argparse.ArgumentParser(description="使用官方 OpenAI SDK 调用器灵文本模型（消耗调用余额）。")
     parser.add_argument("--prompt", required=True, help="发送给所选模型的文本。")
     parser.add_argument("--stream", action="store_true", help="使用官方 SSE 流式调用。")
+    parser.add_argument("--thinking", choices=["enabled", "disabled"], help="显式切换思考模式，须所选模型支持；省略时使用供应商默认。")
     args = parser.parse_args()
     missing = [name for name in ("QILING_API_KEY", "QILING_BASE_URL", "QILING_MODEL") if not os.environ.get(name)]
     if missing:
         parser.error("请设置 " + ", ".join(missing) + "；Base URL 须包含 /v1。")
     from openai import OpenAI
 
+    options = {"extra_body": {"thinking": {"type": args.thinking}}} if args.thinking is not None else {}
     with OpenAI(api_key=os.environ["QILING_API_KEY"], base_url=os.environ["QILING_BASE_URL"], max_retries=0) as client:
         result = client.chat.completions.create(
             model=os.environ["QILING_MODEL"],
             messages=[{"role": "user", "content": args.prompt}],
             stream=args.stream,
+            **options,
         )
         if not args.stream:
             print(result.choices[0].message.content)

@@ -1,17 +1,17 @@
-# qiling-ai-sdk 0.5.1
+# qiling-ai-sdk 0.5.2
 
 器灵官方 Python SDK，支持软件授权、套餐权益、设备与额度管理、API Key 快速授权、开放模型调用及任务查询。支持 Python 3.9+，基础功能仅使用标准库；官方OpenAI桥接为可选依赖，需要Python3.10+。
 
 [官网](https://toolsoul.daniu7.cn) · [在线开发文档](https://867fas1f7s.apifox.cn/) · [AI 文档索引](https://867fas1f7s.apifox.cn/llms.txt) · [配套接入 Skills](https://github.com/qilingAI/qiling-skills)
 
-接口已按 2026-10-15 的公开 API 文档核对。官网链接用于访问网站；API 根地址由接入配置明确提供，SDK 不预设生产域名。
+接口已按 2026-10-17 的公开文档、当前服务规范及模型能力说明核对。官网链接用于访问网站；API 根地址由接入配置明确提供，SDK 不预设生产域名。
 
 ## 安装
 
 从官方仓库安装固定版本：
 
 ```sh
-python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.1"
+python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.2"
 ```
 
 或者克隆源码后安装：
@@ -120,7 +120,7 @@ call_id = result["qiling"]["id"]  # 平台调用 ID，与 chatcmpl- 字符串不
 
 `usage`、`logs` 和 `submit_task` 的 options 为关键字参数。去 AI 的 `remove_ai(text)` 和 `submit_task("remove_ai", input=text)` 原样提交正文，保留真实换行与空行。不要先合并段落、清洗空白或将换行换成字面量反斜杠加 n；JSON 序列化由 SDK 完成。保留文件原始换行时可用 `Path(path).read_bytes().decode("utf-8-sig")`。
 
-模型费用使用用户调用余额，与普通软件次数额度独立，不追加 `consume_quota`。报价已含倍率，十进制金额计算用 Decimal；费用为空不表示免费。视频 submitting/queued/running/cancel_requested 查询同一平台 id，unknown/review 等待核对。取消被接受不代表最终取消或退款；流式断开也不表示免费，不自动新建请求重试。
+模型费用使用 API Key 所属用户的调用余额，与软件普通次数额度独立，不追加 `consume_quota`。提交时只要求余额大于 0，不预扣、冻结或按估价占用余额；完成后依据可信实际用量与请求价格快照结算，可使余额为负，此时停止新调用，充值先抵欠款。estimate 只报价，不应在客户端以估价超过余额为由另做预冻结。报价已含倍率，十进制金额计算用 Decimal；费用为空表示待完成或核对，不代表免费。视频 submitting/queued/running/cancel_requested 查询同一平台 id，unknown/review 等待核对。取消被接受不代表最终取消或退款；流式断开也不表示免费，不自动新建请求重试。
 
 模型错误采用 `{"error":{"message":...,"type":...,"param":...,"code":...}}`，器灵 SDK 将其中 error 对象保留在 `QilingAiError.detail`；旧平台接口的 detail 错误仍支持。HTTP 400 参数不支持，401 密钥无效，402 余额不足，403 权限不足，409 冲突或结果待核对。不能用 SDK refresh_token 刷新 API Key。
 
@@ -142,7 +142,7 @@ client = authorization.connect()
 docs = client.model_docs()
 ```
 
-软件传入平台登记的正式 App Key；独立 Skills 调用可省略 `app_key`，用 `client_name` 标明名称。`connect()` 返回 API Key 客户端，`authorize()` 返回包含 `api_key` 的授权结果，供宿主写入安全存储；两者都不会自动保存密钥。默认 Key 是通用用户凭证，多个应用可能共用，重置或停用会影响已接入应用。
+软件传入平台登记的正式 App Key，平台检查软件已启用、已上架且有可用 AI 套餐配置，不再要求 API Key 账号持有该软件授权。软件可由 A 账号登录，再由 B 账号在浏览器确认授权，领取 B 的默认 Key；AI 费用、余额和记录归 B。软件使用权仍由 A 的 SDK 登录、设备及权益流程独立校验，不能以有效 AI Key 代替。独立 Skills 可省略 app_key，用 client_name 标明名称。`connect()` 返回 API Key 客户端，`authorize()` 返回包含 `api_key` 的授权结果，供宿主写入安全存储；两者都不会自动保存密钥。默认 Key 是通用用户凭证，多个应用可能共用，重置或停用会影响已接入应用。
 
 `connect/authorize` 是阻塞等待方法，GUI 放在后台线程；需要取消或已有事件循环时用 `start()` / `poll(device_code)` 自行调度。只打开返回的 `verification_url`，按返回的 `interval`（至少 3 秒）轮询，最多等待 `expires_in`（默认 600 秒）。`pending` 等待，`denied/consumed` 停止，过期 HTTP 410 停止；429 后放慢查询。授权只能领取一次，领取响应丢失时重新发起授权，不自动重复领取。`device_code` 只放 JSON 请求体，不发到浏览器、URL 或日志。
 
@@ -297,7 +297,7 @@ MIT，见 [LICENSE](LICENSE)。
 本版保留软件登录、会话、套餐及去AI原文换行处理。普通JSON调用不新增第三方依赖；流式与multipart图片编辑可在Python3.10+安装可选桥接：
 
 ```sh
-python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.1"
+python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.2"
 ```
 
 ```python
@@ -334,7 +334,7 @@ video = client.video(
 print(client.model_call(video["id"]))
 ```
 
-视频支持HTTPS/Data URI参考图/视频/音频、first_frame/last_frame、ratio、generate_audio、return_last_frame；查询和取消继续使用model_call/cancel_video。成功读取data.video_url和所请求且上游返回的data.last_frame_url，计费在billing。不能直接当作官方OpenAI Videos API或Seedance官方任务路径使用。额度预估按模型配置冻结上界，最后按上游真实用量结算；断流、用量缺失或未知结果只核对原任务，不新建请求重试。
+视频支持HTTPS/Data URI参考图/视频/音频、first_frame/last_frame、ratio、generate_audio、return_last_frame；查询和取消继续使用model_call/cancel_video。成功读取data.video_url和所请求且上游返回的data.last_frame_url，计费在billing。不能直接当作官方OpenAI Videos API或Seedance官方任务路径使用。reference_seconds 及额度预估只用于费用估算，不预扣或占用余额，最后按上游真实用量结算；断流、用量缺失或未知结果只核对原任务，不新建请求重试。
 
 最新动态模型契约：已确认平台根地址下的 `/api/v1/open/model-docs` 和 `/api/v1/public/developer-openapi.json`；静态参考见 [Apifox 索引](https://867fas1f7s.apifox.cn/llms.txt)。接入时先读该模型能力与Schema，不能靠别名推断权限。当前仅GitHub源码/Tag发布，不发布公共PyPI包。
 
@@ -343,3 +343,23 @@ print(client.model_call(video["id"]))
 补齐 SDK Bearer 视频接口的多模态 content、参考音频、首尾帧和音频生成参数。`QilingOpenClient.image` 是普通 JSON 调用；`stream=True` 会在发请求前提示使用官方 SDK 或 `client.openai()` 桥接，避免将 SSE 当作 JSON。图片编辑及图片流式继续沿用官方 `images.edit/generate`，不新增上传协议。
 
 工具、结构化输出、音视频理解、图片编辑/流式和视频素材能力均取决于所选模型的后台配置及供应商支持。先核对动态文档，不把能力列表当作每个模型均已支持的承诺。
+
+## 0.5.2：思考模式、账户与计费
+
+模型目录 `data[].qiling.config` 新增 `supports_thinking`、`thinking_modes`，支持时 capabilities 包含 thinking；动态模型文档的 `request_schema.properties.thinking` 给出允许的 type。更新缓存后再展示思考模式控制，不能仅凭旧缓存或模型别名推断支持。后台显式关闭优先，能力未开放时不要发送该参数。
+
+```python
+# 仅在所选模型声明支持 disabled 时使用。
+from qiling_ai_sdk import QilingOpenClient
+
+client = QilingOpenClient(os.environ["QILING_BASE_URL"], os.environ["QILING_API_KEY"])
+result = client.chat(
+    [{"role": "user", "content": "你好"}],
+    model=selected_model,
+    thinking={"type": "disabled"},
+)
+```
+
+官方 OpenAI SDK 在 `chat.completions.create` 中使用 `extra_body={"thinking":{"type":"disabled"}}`；线上 JSON 是顶层 thinking，不能嵌套 extra_body。开启时用 enabled。不传参数沿用供应商默认，并不等于关闭；界面应保存用户选择，没有用户选择且模型支持时可显式选择 disabled。CLI 示例新增 `--thinking enabled|disabled`，默认不传参数。reasoning_effort 是另一种控制，不能替代 thinking 开关。
+
+软件登录账号和 AI 付费账号可以不同；切换 AI Key 只切换 AI 账户，不覆盖软件 SDK 会话。软件来源头检查软件状态和 AI 配置，软件使用权仍独立校验。模型消费不再预留资金，可信实际用量确认后扣款；不明结果保留原任务待核对，核对前不扣费或占用余额，不作为零费成功。
