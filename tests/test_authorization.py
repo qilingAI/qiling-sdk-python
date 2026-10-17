@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 import unittest
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from qiling_ai_sdk import QilingAuthorizationClient, QilingAiError
@@ -39,6 +39,36 @@ class AuthorizationTests(unittest.TestCase):
         with patch.object(client, "start", return_value=result), patch.object(client, "poll", return_value={"status": "authorized", "api_key": "private-key"}), patch.object(auth.webbrowser, "open", return_value=True) as browser:
             client.authorize()
         browser.assert_called_once_with(request["verification_url"])
+
+    def test_invalid_site_does_not_fall_back_to_main_site_or_open_browser(self):
+        for status in (404, 409):
+            with self.subTest(status=status):
+                client = QilingAuthorizationClient("https://api.example.test", site_code="agent-source")
+                error = HTTPError("https://api.example.test", status, "site error", {}, io.BytesIO(b'{"detail":"site error"}'))
+                with patch.object(http, "urlopen", side_effect=error) as send, patch.object(auth.webbrowser, "open") as browser:
+                    with self.assertRaises(QilingAiError) as raised:
+                        client.authorize()
+                self.assertEqual(raised.exception.status, status)
+                self.assertEqual(send.call_count, 1)
+                self.assertEqual(json.loads(send.call_args.args[0].data)["site_code"], "agent-source")
+                browser.assert_not_called()
+
+    def test_main_site_source_and_agent_key_keep_configured_api_origin(self):
+        for source in ("", "platform"):
+            with self.subTest(source=source):
+                client = QilingAuthorizationClient("https://api.example.test", site_code=source)
+                with patch.object(http, "urlopen", return_value=io.BytesIO(json.dumps(self.start).encode())) as send:
+                    client.start()
+                body = json.loads(send.call_args.args[0].data)
+                self.assertEqual(body.get("site_code", ""), source)
+        client = QilingAuthorizationClient("https://api.example.test", site_code="agent-source", app_key="registered-app")
+        with patch.object(client, "authorize", return_value={"api_key": "billing-B-key", "app_key": "registered-app", "base_url": "https://custom.agent.test"}):
+            connected = client.connect()
+        with patch.object(http, "urlopen", return_value=io.BytesIO(b'{}')) as send:
+            connected.balance()
+        request = send.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.example.test/api/v1/open/balance")
+        self.assertEqual(request.get_header("X-api-key"), "billing-B-key")
 
     def test_pending_and_rate_limit_wait_before_one_time_success(self):
         success = {"status": "authorized", "api_key": "private-key", "app_key": "registered-app"}
