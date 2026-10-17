@@ -10,15 +10,17 @@ from .open_client import QilingOpenClient
 
 
 class QilingAuthorizationClient:
-    def __init__(self, base_url: str, *, app_key: str = "", client_name: str = "器灵 Skills", timeout: int = 30):
+    def __init__(self, base_url: str, *, app_key: str = "", client_name: str = "器灵 Skills", site_code: str = "", timeout: int = 30):
         self._http = QilingAiClient(base_url, timeout=timeout)
         self.app_key = app_key
         self.client_name = client_name
+        self.site_code = site_code
 
     def start(self) -> dict[str, Any]:
-        return self._http._request("POST", "/api/v1/auth/api-key/requests", {
-            "app_key": self.app_key, "client_name": self.client_name,
-        }, auth=False)
+        payload = {"app_key": self.app_key, "client_name": self.client_name}
+        if self.site_code:
+            payload["site_code"] = self.site_code
+        return self._http._request("POST", "/api/v1/auth/api-key/requests", payload, auth=False)
 
     def poll(self, device_code: str) -> dict[str, Any]:
         """Retrieve once. If the response is lost, start a new authorization request."""

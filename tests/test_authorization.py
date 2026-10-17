@@ -28,6 +28,17 @@ class AuthorizationTests(unittest.TestCase):
         self.assertEqual(json.loads(second.data), {"device_code": "private-device-code"})
         self.assertNotIn("private-device-code", second.full_url)
         self.assertIsNone(second.get_header("Authorization"))
+        self.assertNotIn("site_code", json.loads(first.data))
+
+    def test_site_source_is_sent_but_server_controls_confirmation_url(self):
+        client = QilingAuthorizationClient("https://api.example.test", app_key="registered-app", site_code="agent-source")
+        request = {**self.start, "verification_url": "https://custom.agent.test/account/api-authorize?request=public-code&site=agent-source"}
+        with patch.object(http, "urlopen", return_value=io.BytesIO(json.dumps(request).encode())) as send:
+            result = client.start()
+        self.assertEqual(json.loads(send.call_args.args[0].data)["site_code"], "agent-source")
+        with patch.object(client, "start", return_value=result), patch.object(client, "poll", return_value={"status": "authorized", "api_key": "private-key"}), patch.object(auth.webbrowser, "open", return_value=True) as browser:
+            client.authorize()
+        browser.assert_called_once_with(request["verification_url"])
 
     def test_pending_and_rate_limit_wait_before_one_time_success(self):
         success = {"status": "authorized", "api_key": "private-key", "app_key": "registered-app"}
