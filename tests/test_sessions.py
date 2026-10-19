@@ -43,6 +43,23 @@ class PythonSdkSessionTests(unittest.TestCase):
             device_provider=lambda: sdk.DeviceDescriptor("device", "test", "web"),
         )
 
+    def test_quick_authorization_boolean_tracks_login_and_check_without_an_extra_request(self):
+        client = self.client()
+        calls = []
+        def request(req, **kwargs):
+            calls.append(req.full_url)
+            enabled = req.full_url.endswith('/login')
+            return Response({'valid': True, 'sdk_token': 'sdk-session', 'refresh_token': 'sdk-refresh',
+                             'product': {'ai_quick_authorization_enabled': enabled}})
+        with patch.object(sdk, 'urlopen', side_effect=request):
+            logged_in = client.license_login('tool', 'license')
+            self.assertIs(logged_in['product']['ai_quick_authorization_enabled'], True)
+            checked = client.license_check('tool')
+            self.assertIs(checked['product']['ai_quick_authorization_enabled'], False)
+            self.assertIs(client.license_session['product']['ai_quick_authorization_enabled'], False)
+        self.assertEqual(calls, ['https://test.invalid/api/v1/sdk/license/login',
+                                 'https://test.invalid/api/v1/sdk/license/check'])
+
     def test_concurrent_requests_share_refresh_and_keep_credentials(self):
         client = self.client()
         refreshes = []

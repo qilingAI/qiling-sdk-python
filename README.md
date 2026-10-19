@@ -1,17 +1,17 @@
-# qiling-ai-sdk 0.5.3
+# qiling-ai-sdk 0.5.4
 
 器灵官方 Python SDK，支持软件授权、套餐权益、设备与额度管理、API Key 快速授权、开放模型调用及任务查询。支持 Python 3.9+，基础功能仅使用标准库；官方OpenAI桥接为可选依赖，需要Python3.10+。
 
 [官网](https://toolsoul.daniu7.cn) · [在线开发文档](https://867fas1f7s.apifox.cn/) · [AI 文档索引](https://867fas1f7s.apifox.cn/llms.txt) · [配套接入 Skills](https://github.com/qilingAI/qiling-skills)
 
-接口已按 2026-10-17 的公开文档、当前服务规范及模型能力说明核对。官网链接用于访问网站；API 根地址由接入配置明确提供，SDK 不预设生产域名。
+接口已按 2026-10-19 的公开文档、当前服务规范及模型能力说明核对。官网链接用于访问网站；API 根地址由接入配置明确提供，SDK 不预设生产域名。
 
 ## 安装
 
 从官方仓库安装固定版本：
 
 ```sh
-python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.3"
+python -m pip install "git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.4"
 ```
 
 或者克隆源码后安装：
@@ -314,7 +314,7 @@ MIT，见 [LICENSE](LICENSE)。
 本版保留软件登录、会话、套餐及去AI原文换行处理。普通JSON调用不新增第三方依赖；流式与multipart图片编辑可在Python3.10+安装可选桥接：
 
 ```sh
-python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.3"
+python -m pip install "qiling-ai-sdk[openai] @ git+https://github.com/qilingAI/qiling-sdk-python.git@v0.5.4"
 ```
 
 ```python
@@ -380,3 +380,14 @@ result = client.chat(
 官方 OpenAI SDK 在 `chat.completions.create` 中使用 `extra_body={"thinking":{"type":"disabled"}}`；线上 JSON 是顶层 thinking，不能嵌套 extra_body。开启时用 enabled。不传参数沿用供应商默认，并不等于关闭；界面应保存用户选择，没有用户选择且模型支持时可显式选择 disabled。CLI 示例新增 `--thinking enabled|disabled`，默认不传参数。reasoning_effort 是另一种控制，不能替代 thinking 开关。
 
 软件登录账号和 AI 付费账号可以不同；切换 AI Key 只切换 AI 账户，不覆盖软件 SDK 会话。软件来源头检查软件状态和 AI 配置，软件使用权仍独立校验。模型消费不再预留资金，可信实际用量确认后扣款；不明结果保留原任务待核对，核对前不扣费或占用余额，不作为零费成功。
+
+
+### AI 快捷授权入口（0.5.4）
+
+现有 `/api/v1/sdk/license/login` 和 `/api/v1/sdk/license/check` 返回 `product.ai_quick_authorization_enabled`，值为 JSON 布尔值，默认 `true`。按授权所属站点读取该软件的开关：主站和各分站独立，基础分站也可设置。管理员赠送试用、多模块及开发测试授权复用相同返回位置。后台保存后，软件下次登录或校验即可拿到新值。
+
+客户端使用这个值决定是否展示 AI 快捷授权入口；为兼容旧平台，缺失字段可按 `true` 处理，不能用 `value || true`（会覆盖显式 `false`）。这只是客户端入口设置，不替代套餐 `ai_enabled`、授权有效性、用户确认和实际调用权限；不会撤销已经授权的 API Key。未新增独立查询接口或修改调用扣费规则。
+
+Python：`show_ai_quick_auth = session.get("product", {}).get("ai_quick_authorization_enabled", True)`
+
+TypeScript：`const showAiQuickAuth = session.product.ai_quick_authorization_enabled ?? true;`
