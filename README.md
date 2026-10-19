@@ -388,6 +388,13 @@ result = client.chat(
 
 客户端使用这个值决定是否展示 AI 快捷授权入口；为兼容旧平台，缺失字段可按 `true` 处理，不能用 `value || true`（会覆盖显式 `false`）。这只是客户端入口设置，不替代套餐 `ai_enabled`、授权有效性、用户确认和实际调用权限；不会撤销已经授权的 API Key。未新增独立查询接口或修改调用扣费规则。
 
-Python：`show_ai_quick_auth = session.get("product", {}).get("ai_quick_authorization_enabled", True)`
+每次校验成功后，宿主用最新响应更新现有入口，不缓存首次登录的开关：
+
+```python
+session = client.license_check(app_key)
+show_ai_quick_auth = session.get("product", {}).get("ai_quick_authorization_enabled", True)
+```
+
+独立 API/Skills 没有软件会话时，不需要为此开关新增软件登录。关闭入口不应清空用户已授权的 Key，也不表示模型权限或套餐权益被撤销。
 
 TypeScript：`const showAiQuickAuth = session.product.ai_quick_authorization_enabled ?? true;`
