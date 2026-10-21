@@ -60,6 +60,24 @@ class PythonSdkSessionTests(unittest.TestCase):
         self.assertEqual(calls, ['https://test.invalid/api/v1/sdk/license/login',
                                  'https://test.invalid/api/v1/sdk/license/check'])
 
+    def test_product_details_preserve_html_markdown_and_optional_values(self):
+        client = self.client()
+        html = '<h2>软件详情</h2>\n<p>第一段 &amp; 第二段</p><img src="https://example.test/a.png"><video controls src="https://example.test/a.mp4"></video>'
+        markdown = '## 历史详情\n\n第一段\n\n- 示例'
+        for content in (html, markdown, '', None):
+            with self.subTest(content=content):
+                product = {'slug': 'tool', 'detail_content': content, 'ai_quick_authorization_enabled': False}
+                session = {'valid': True, 'sdk_token': 'sdk-session', 'refresh_token': 'sdk-refresh', 'product': product}
+                storefront = {'products': [product]}
+                with patch.object(sdk, 'urlopen', side_effect=[Response(session), Response(session), Response({'product': product}), Response(storefront)]) as send:
+                    self.assertEqual(client.license_login('tool', 'license')['product']['detail_content'], content)
+                    self.assertEqual(client.license_check('tool')['product']['detail_content'], content)
+                    self.assertEqual(client.get_license_session()['product']['detail_content'], content)
+                    self.assertEqual(client.bootstrap('tool')['product']['detail_content'], content)
+                    self.assertEqual(client.get_storefront(app_key='tool')['products'][0]['detail_content'], content)
+                self.assertEqual(send.call_count, 4)
+                self.assertIs(client.get_license_session()['product']['ai_quick_authorization_enabled'], False)
+
     def test_concurrent_requests_share_refresh_and_keep_credentials(self):
         client = self.client()
         refreshes = []

@@ -4,7 +4,7 @@
 
 [官网](https://toolsoul.daniu7.cn) · [在线开发文档](https://867fas1f7s.apifox.cn/) · [AI 文档索引](https://867fas1f7s.apifox.cn/llms.txt) · [配套接入 Skills](https://github.com/qilingAI/qiling-skills)
 
-接口已按 2026-10-19 的公开文档、当前服务规范及模型能力说明核对。官网链接用于访问网站；API 根地址由接入配置明确提供，SDK 不预设生产域名。
+接口已按 2026-10-21 的公开文档、当前服务规范及模型能力说明核对。官网链接用于访问网站；API 根地址由接入配置明确提供，SDK 不预设生产域名。
 
 ## 安装
 
@@ -285,6 +285,10 @@ if plans:
 授权会话仅支持续费/升级。新购应引导用户打开产品的 `detail_url`，到主站或分站前台完成。`create_payment` 保留兼容入口，但授权会话调用其 `new_license` 流程会被平台拒绝。
 
 商品含名称、简介、详情、图片、轮播图、交付地址、套餐和分站价格。有授权缓存时，`get_storefront` 优先使用授权所属分站；还支持 `site_code`、`app_key`、`category`、`keyword`。
+
+`product.detail_content` 现在支持富文本 HTML，同时兼容历史 Markdown；SDK 原样返回内容，不渲染、删标签或转换段落。宿主应复用已有的安全富文本/Markdown 展示，按实际内容选择格式，不将 HTML 标签直接显示为正文，也不允许脚本或事件执行。不需要内嵌展示时可使用服务端返回的 `detail_url` 或 `product_url`。空内容照常处理，不因缺少详情拒绝有效授权。
+
+这次开发者文档还新增软件标签、支持设备、功能特性、FAQ、更新说明、素材上传和套餐赠送 AI 余额结算预览。这些属于软件管理/展示接口，不要求在软件运行端新增开发者凭证或上传逻辑；支持设备文案不等于授权设备额度，赠送金额配置或收益预估不等于用户钱包已到账。实际套餐权益、授权和调用余额仍分别读取对应服务端结果。客户端 SDK 的现有请求路径和模型协议不变，本次无需升级运行接口版本。
 
 使用套餐时须读取 `quota`、`quota_mode`、`ai_enabled`、设备与账号限制。多模块工具依据响应中的 `entitlements`，按 `feature_code`、`valid` 控制功能。`license.is_free` 标识免费授权；免费升级付费仍走续费接口，升级后的有效期、额度与权益以重新 `license_check` 的结果为准。
 
